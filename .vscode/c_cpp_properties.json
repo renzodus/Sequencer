@@ -7,7 +7,9 @@
                 "C:\\Instaladores\\arduino-nightly\\libraries",
                 "C:\\Program Files (x86)\\Arduino\\libraries",
                 "C:\\Users\\Renzo\\Documents\\Arduino\\libraries",
-                "C:\\Users\\Renzo\\Documents\\Arduino\\libraries\\CapacitiveSensor"
+                "C:\\Users\\Renzo\\Documents\\Arduino\\libraries\\CapacitiveSensor",
+                "C:\\Users\\Renzo\\Documents\\Arduino\\libraries\\Analog-Digital_Multiplexers",
+                "C:\\Users\\Renzo\\Documents\\Arduino\\libraries\\LiquidCrystal"
             ],
             "defines": [
                 "_DEBUG",

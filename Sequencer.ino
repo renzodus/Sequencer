@@ -1,5 +1,6 @@
 #include <CapacitiveSensor.h>
 #include <LiquidCrystal_SR3W.h>
+#include "Type4067Mux.h"
 
 #define capSensorSend 2
 #define seqSensor00In 22
@@ -34,6 +35,12 @@
 #define LCD_Clock 0
 #define LCD_BackLightPin 0
 
+#define LED_COM 0
+#define LED_S0 0
+#define LED_S1 0
+#define LED_S2 0
+#define LED_S3 0
+
 #define gateOut0 0
 #define gateOut1 0
 #define gateOut2 0
@@ -58,7 +65,7 @@ byte sequence[4][32] = {
 };
 bool sequenceGate[4][32] = {{0}, {0}, {0}, {0}};
 // Modos (0: Sequencer, 1: Keyboard, 2: Arpeggiator, 3: MIDI controller)
-byte mode[4] = {0, 0, 0, 0};
+byte mode[4] = {0, 1, 0, 0};
 byte activeBank[4] = {0, 0, 0, 0};
 byte activeChannel = 0;
 byte cvWrite[4] = {0, 0, 0, 0};
@@ -71,12 +78,16 @@ unsigned long ms = millis();
 // 0: nada, 1: tempo, 2: sequence notes
 byte encoderControl = 0;
 int debounce = 200;
+int seqSensorRead[16] = {0};
+bool seqSensorGate[16] = {0};
+bool seqSensorGatePrev[16] = {0};
+bool seqSensorTrig[16] = {0};
 int seqTriggerFactor = 700;
+int optionSensorRead[10] = {0};
+bool optionSensorGate[10] = {0};
+bool optionSensorGatePrev[10] = {0};
+bool optionSensorTrig[10] = {0};
 int optionTriggerFactor = 700;
-int seqSensorValues[16] = {0};
-int seqSensorTime[16] = {0};
-int optionSensorValues[10] = {0};
-int optionSensorTime[10] = {0};
 CapacitiveSensor capSensor[26] = {
     CapacitiveSensor(capSensorSend, seqSensor00In),
     CapacitiveSensor(capSensorSend, seqSensor01In),
@@ -109,6 +120,9 @@ CapacitiveSensor capSensor[26] = {
 //LCD
 LiquidCrystal_SR3W lcd(LCD_Data, LCD_Clock, LCD_Strobe);
 
+// LEDs
+Type4067Mux ledMux(LED_COM, OUTPUT, DIGITAL, LED_S0, LED_S1, LED_S2, LED_S3);
+
 // Scales
 byte octave[4] = {0};
 byte chromatic[12] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
@@ -121,7 +135,7 @@ float voltPerOctaveNotes[12] = { 1/12, 1/12*2, 1/12*3, 1/12*4, 1/12*5, 1/12*6, 1
 
 
 void setup() {
-    lcd.begin();
+    lcd.begin(16, 2);
     lcd.home();
     lcd.noCursor();
     lcd.print("t");
@@ -137,14 +151,29 @@ void setup() {
 void loop() {
     
     ms = millis();
+    
 
-    // Leer entradas de secuencia y opciones respectivamente
-    for (int i = 0; i < 16; i++) seqSensorValues[i] = capSensor[i].capacitiveSensor(30);
-    for (int i = 0; i < 10; i++) optionSensorValues[i] = capSensor[i + 16].capacitiveSensor(30);
+    // Leer entradas de secuencia
+    for (int i = 0; i < 16; i++) {
+        seqSensorGatePrev[i] = seqSensorGate[i];
+        seqSensorRead[i] = capSensor[i].capacitiveSensor(30);
+        if (seqSensorRead[i] >= seqTriggerFactor) seqSensorGate[i] = 1;
+        if (seqSensorGate[i] == 1 && seqSensorGatePrev[i] == seqSensorGate[i]) seqSensorTrig[i] = 1;
+        else seqSensorTrig[i] = 0;
+    }
+
+    // Leer entradas de opciones
+    for (int i = 0; i < 10; i++) {
+        optionSensorGatePrev[i] = optionSensorGate[i];
+        optionSensorRead[i] = capSensor[i].capacitiveSensor(30);
+        if (optionSensorRead[i] >= optionTriggerFactor) optionSensorGate[i] = 1;
+        if (optionSensorGate[i] == 1 && optionSensorGatePrev[i] == optionSensorGate[i]) optionSensorTrig[i] = 1;
+        else optionSensorTrig[i] = 0;
+    }
 
     // Manejar toques de botones de opciones
     for (int i = 0; i < 10; i++) {
-        if (optionSensorValues[i] >= optionTriggerFactor && millis() - optionSensorTime[i] > debounce) {
+        if (optionSensorTrig[i]) {
             switch (i) {  
             case 0:
                 // Tempo
@@ -192,7 +221,6 @@ void loop() {
             default:
                 break;
             }
-            optionSensorTime[i] = millis();
         }
     }
 
@@ -229,10 +257,14 @@ void loop() {
                             else bankIndex = 16;
 
                             // Setear valores a escribir
-                            for (int j = bankIndex; j < bankIndex + 16; j++){
-                                cvWrite[i] = sequence[j];
-                                gateWrite[i] = sequenceGate[j];
-                            }     
+                            // for (int j = bankIndex; j < bankIndex + 16; j++){
+                            //     cvWrite[i] = sequence[j];
+                            //     gateWrite[i] = sequenceGate[j];
+                            // }
+                            cvWrite[i] = sequence[bankIndex + step[i]];
+                            gateWrite[i] = sequenceGate[bankIndex + step[i]];
+                            // LED indicador de step
+                            ledMux.write(!sequenceGate[bankIndex + step[i]], step[i]);
                         }
                     }
                 }
@@ -250,16 +282,20 @@ void loop() {
         }
     }
 
+    // Tocar Secuencia
+    for (int i = 0; i < channels; i++) {
+        if (mode[i] == 0 && playing) {
+            
+        }
+        
+    }
+    
+
 
     // Modo Sequencer
     if (mode[activeChannel] == 0) {
         // Manejar toques de botones de sequencer
-        for (int i = 0; i < 16; i++) {
-            if (seqSensorValues[i] >= seqTriggerFactor && millis() - seqSensorTime[i] > debounce) {
-                sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
-                seqSensorTime[i] = millis();
-            }
-        }
+        for (int i = 0; i < 16; i++) if (seqSensorTrig[i]) sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
     }
 
     // Modo Keyboard
@@ -267,7 +303,7 @@ void loop() {
         for (int i = 0; i < 16; i++) {
             // Si se está tocando una tecla, escribe el gate y cv correspondiente y rompe el loop
             // Esto genera prioridad en la tecla más grave
-            if (seqSensorValues[i] >= seqTriggerFactor) {
+            if (seqSensorGate[i]) {
                 switch (i) {
                 case 1:
                 case 2:
@@ -286,12 +322,9 @@ void loop() {
                         octave[activeChannel]++;
                     }
                     break;
-                default:
-                    break;
                 }
-                
                 break;
-            } else if (i == 16 && seqSensorValues[i] < triggerFactor) {
+            } else if (i == 15 && !seqSensorGate[i]) {
                 // Si no se está tocando ninguna tecla, baja el gate
                 gateWrite[activeChannel] = 0;
             }
@@ -299,6 +332,30 @@ void loop() {
         
     }
 
+    //LEDs
+    switch (mode[activeChannel]) {
+        case 0: // Sequencer
+            for (int i = 0; i < 16; i++) {
+                int bankIndex;
+                if (activeBank[i] == 0) bankIndex = 0;
+                else bankIndex = 16;
+                for (int j = bankIndex; j < bankIndex + 16; j++) ledMux.write(sequenceGate[j], i);
+            }
+            break;
+
+        case 1: // Keyboard
+            for (int i = 0; i < 16; i++) {
+                switch (i) {
+                case 1:
+                case 2:
+                case 4 ... 6:
+                case 8 ... 15:
+                    ledMux.write(1, i);
+                    break;
+                }
+            }
+            break;
+    }
 
     //Escribir salidas
     digitalWrite(gateOut0, gateWrite[0]);
