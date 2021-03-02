@@ -1,4 +1,5 @@
 #include <CapacitiveSensor.h>
+#include <LiquidCrystal_SR3W.h>
 
 #define capSensorSend 2
 #define seqSensor00In 22
@@ -28,6 +29,11 @@
 #define optionSensor8In 0
 #define optionSensor9In 0
 
+#define LCD_Strobe 0
+#define LCD_Data 0
+#define LCD_Clock 0
+#define LCD_BackLightPin 0
+
 #define gateOut0 0
 #define gateOut1 0
 #define gateOut2 0
@@ -45,7 +51,7 @@ byte step[4] = {0, 0, 0, 0};
 int globalCount = 0;
 // Secuencia, 0-15 banco 0 , 16-31 banco 1
 byte sequence[4][32] = {
-    {255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 51, 51, 51, 51, 51, 51, 51, 51, 0, 0, 0, 0, 51, 51, 51, 51, 102, 102, 102, 102, 153, 153, 153, 153},
     {255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0},
     {255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0},
     {255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0},
@@ -54,16 +60,19 @@ bool sequenceGate[4][32] = {{0}, {0}, {0}, {0}};
 // Modos (0: Sequencer, 1: Keyboard, 2: Arpeggiator, 3: MIDI controller)
 byte mode[4] = {0, 0, 0, 0};
 byte activeBank[4] = {0, 0, 0, 0};
+byte activeChannel = 0;
 byte cvWrite[4] = {0, 0, 0, 0};
 bool gateWrite[4] = {0, 0, 0, 0};
 int tempo = 120;
 unsigned long preMillis = 0;
 unsigned long ms = millis();
-byte activeChannel = 0;
 
 // Controles
+// 0: nada, 1: tempo, 2: sequence notes
+byte encoderControl = 0;
 int debounce = 200;
-int triggerFactor = 700;
+int seqTriggerFactor = 700;
+int optionTriggerFactor = 700;
 int seqSensorValues[16] = {0};
 int seqSensorTime[16] = {0};
 int optionSensorValues[10] = {0};
@@ -97,6 +106,8 @@ CapacitiveSensor capSensor[26] = {
     CapacitiveSensor(capSensorSend, optionSensor9In)
 };
 
+//LCD
+LiquidCrystal_SR3W lcd(LCD_Data, LCD_Clock, LCD_Strobe);
 
 // Scales
 byte octave[4] = {0};
@@ -110,7 +121,16 @@ float voltPerOctaveNotes[12] = { 1/12, 1/12*2, 1/12*3, 1/12*4, 1/12*5, 1/12*6, 1
 
 
 void setup() {
-
+    lcd.begin();
+    lcd.home();
+    lcd.noCursor();
+    lcd.print("t");
+    lcd.print(tempo);
+    lcd.setCursor(13, 0);
+    lcd.print("Seq");
+    lcd.setCursor(13, 1);
+    lcd.print("ch");
+    lcd.print(activeChannel);
 }
 
 
@@ -118,24 +138,76 @@ void loop() {
     
     ms = millis();
 
-    // Leer entradas de secuencia
+    // Leer entradas de secuencia y opciones respectivamente
     for (int i = 0; i < 16; i++) seqSensorValues[i] = capSensor[i].capacitiveSensor(30);
-    // Leer entradas de opciones
     for (int i = 0; i < 10; i++) optionSensorValues[i] = capSensor[i + 16].capacitiveSensor(30);
 
-    // Manejar toques de botones de sequencer
-    for (int i = 0; i < 16; i++) {
-        if (seqSensorValues[i] >= triggerFactor && millis() - seqSensorTime[i] > debounce) {
-            sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
-            seqSensorTime[i] = millis();
-        }
-    }
     // Manejar toques de botones de opciones
     for (int i = 0; i < 10; i++) {
-        if (optionSensorValues[i] >= triggerFactor && millis() - optionSensorTime[i] > debounce) {
-            sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
+        if (optionSensorValues[i] >= optionTriggerFactor && millis() - optionSensorTime[i] > debounce) {
+            switch (i) {  
+            case 0:
+                // Tempo
+                encoderControl = 1;
+                lcd.setCursor(0, 1);
+                lcd.print("Tempo");
+                break;
+                
+            case 1:
+                playing = !playing;
+                break;
+                
+            case 2:
+                playing = !playing;
+                break;
+                
+            case 3:
+                playing = !playing;
+                break;
+                
+            case 4:
+                playing = !playing;
+                break;
+                
+            case 5:
+                playing = !playing;
+                break;
+                
+            case 6:
+                playing = !playing;
+                break;
+                
+            case 7:
+                playing = !playing;
+                break;
+                
+            case 8:
+                playing = !playing;
+                break;
+                
+            case 9:
+                playing = !playing;
+                break;
+            
+            default:
+                break;
+            }
             optionSensorTime[i] = millis();
         }
+    }
+
+
+    // Encoder
+    switch (encoderControl) {
+        case 0:
+            break;
+        
+        case 1:
+            // sumar o restar al tempo
+            break;
+        
+        default:
+            break;
     }
 
 
@@ -181,7 +253,13 @@ void loop() {
 
     // Modo Sequencer
     if (mode[activeChannel] == 0) {
-
+        // Manejar toques de botones de sequencer
+        for (int i = 0; i < 16; i++) {
+            if (seqSensorValues[i] >= seqTriggerFactor && millis() - seqSensorTime[i] > debounce) {
+                sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
+                seqSensorTime[i] = millis();
+            }
+        }
     }
 
     // Modo Keyboard
@@ -189,7 +267,7 @@ void loop() {
         for (int i = 0; i < 16; i++) {
             // Si se está tocando una tecla, escribe el gate y cv correspondiente y rompe el loop
             // Esto genera prioridad en la tecla más grave
-            if (seqSensorValues[i] >= triggerFactor) {
+            if (seqSensorValues[i] >= seqTriggerFactor) {
                 switch (i) {
                 case 1:
                 case 2:
