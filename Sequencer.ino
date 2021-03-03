@@ -52,7 +52,7 @@
 
 // Sequencer
 byte channels = 4;
-bool playing = false;
+bool playing[4] = {false};
 byte steps[4] = {16, 16, 16, 16};
 byte step[4] = {0, 0, 0, 0};
 int globalCount = 0;
@@ -183,42 +183,39 @@ void loop() {
                 break;
                 
             case 1:
-                playing = !playing;
+                
                 break;
                 
             case 2:
-                playing = !playing;
+                
                 break;
                 
             case 3:
-                playing = !playing;
+                
                 break;
                 
             case 4:
-                playing = !playing;
+                
                 break;
                 
             case 5:
-                playing = !playing;
+                
                 break;
                 
             case 6:
-                playing = !playing;
+                playing[activeChannel] = !playing[activeChannel];
                 break;
                 
             case 7:
-                playing = !playing;
+                
                 break;
                 
             case 8:
-                playing = !playing;
+                
                 break;
                 
             case 9:
-                playing = !playing;
-                break;
-            
-            default:
+                
                 break;
             }
         }
@@ -240,57 +237,32 @@ void loop() {
 
 
     // Tocar Secuencia
-	if (playing) {
-        // Recorrer secuencia en fusas
-		if ((ms - preMillis) >= (60000 / tempo) / 8) { 
-            preMillis = ms;
+    if ((ms - preMillis) >= (60000 / tempo) / 8) { // Recorrer secuencia en fusas
+        preMillis = ms;
+        for (int i = 0; i < channels; i++) {
+            if (playing[i]) {
+                if (step[i]%2 == 0) { // Fusas fuertes
+                    if (step[i]/2 < steps[i] && mode[i] == 0) {
+                        // Seleccionar secuencia según banco activo
+                        int bankIndex;
+                        if (activeBank[i] == 0) bankIndex = 0;
+                        else bankIndex = 16;
 
-            // Fusas fuertes
-            if (globalCount%2 == 0) {
-                if (globalCount/2 < steps) {
-                    for (int i = 0; i < channels; i++) {
-                        if (mode[i] == 0) {
-                            // Seleccionar secuencia según banco activo
-                            int bank = activeBank[i];
-                            int bankIndex;
-                            if (bank == 0) bankIndex = 0;
-                            else bankIndex = 16;
-
-                            // Setear valores a escribir
-                            // for (int j = bankIndex; j < bankIndex + 16; j++){
-                            //     cvWrite[i] = sequence[j];
-                            //     gateWrite[i] = sequenceGate[j];
-                            // }
-                            cvWrite[i] = sequence[bankIndex + step[i]];
-                            gateWrite[i] = sequenceGate[bankIndex + step[i]];
-                            // LED indicador de step
-                            ledMux.write(!sequenceGate[bankIndex + step[i]], step[i]);
-                        }
+                        cvWrite[i] = sequence[bankIndex + step[i]];
+                        gateWrite[i] = sequenceGate[bankIndex + step[i]];
+                        ledMux.write(!sequenceGate[bankIndex + step[i]], step[i]); // LED indicador de step
                     }
+                } else { // Fusas débiles, baja el gate
+                    if (mode[i] == 0) gateWrite[i] = 0;
                 }
-            } else {
-                // Fusas débiles, baja el gate
-                for (int i = 0; i < channels; i++) if (mode[i] == 0) gateWrite[i] = 0;
-            }
 
-            // Resetear contador en último step
-            for (int i = 0; i < channels; i++) {
+                // Resetear contador en último step
                 if (step[i] == (steps[i] * 2 - 1)) step[i] = 0;
                 else step[i]++;
             }
-            
         }
-    }
-
-    // Tocar Secuencia
-    for (int i = 0; i < channels; i++) {
-        if (mode[i] == 0 && playing) {
-            
-        }
-        
     }
     
-
 
     // Modo Sequencer
     if (mode[activeChannel] == 0) {
@@ -332,7 +304,7 @@ void loop() {
         
     }
 
-    //LEDs
+    // LEDs & LCD
     switch (mode[activeChannel]) {
         case 0: // Sequencer
             for (int i = 0; i < 16; i++) {
@@ -341,21 +313,25 @@ void loop() {
                 else bankIndex = 16;
                 for (int j = bankIndex; j < bankIndex + 16; j++) ledMux.write(sequenceGate[j], i);
             }
+            writeToLCDCoordinate(13, 0, "Seq");
             break;
 
         case 1: // Keyboard
-            for (int i = 0; i < 16; i++) {
-                switch (i) {
-                case 1:
-                case 2:
-                case 4 ... 6:
-                case 8 ... 15:
-                    ledMux.write(1, i);
-                    break;
-                }
-            }
+            lightKeyboard();
+            writeToLCDCoordinate(13, 0, "Kyb");
+            break;
+
+        case 2:
+            lightKeyboard();
+            writeToLCDCoordinate(13, 0, "Arp");
             break;
     }
+
+    writeToLCDCoordinate(0, 0, String(tempo));
+    writeToLCDCoordinate(8, 0, translateNoteName(int(cvWrite[activeChannel] * 12)));
+    writeToLCDCoordinate(11, 1, String(int(activeBank)));
+    writeToLCDCoordinate(15, 1, String(int(activeChannel)));
+
 
     //Escribir salidas
     digitalWrite(gateOut0, gateWrite[0]);
@@ -372,4 +348,39 @@ void loop() {
 void playNote (byte channel, byte note, byte oct) {
     float voltage = voltPerOctaveNotes[note] + oct;
     cvWrite[channel] = map(voltage, 0, 5, 0, 255);
+}
+
+void lightKeyboard () {
+    for (int i = 0; i < 16; i++) {
+        switch (i) {
+        case 1:
+        case 2:
+        case 4 ... 6:
+        case 8 ... 15:
+            ledMux.write(1, i);
+            break;
+        }
+    }
+}
+
+void writeToLCDCoordinate (int col, int row, String text) {
+    lcd.setCursor(col, row);
+    lcd.print(text);
+}
+
+String translateNoteName (int note) {
+    switch (note) {
+        case 0: return "C";
+        case 1: return "C#";
+        case 2: return "D";
+        case 3: return "D#";
+        case 4: return "E";
+        case 5: return "F";
+        case 6: return "F#";
+        case 7: return "G";
+        case 8: return "G#";
+        case 9: return "A";
+        case 10: return "A#";
+        case 11: return "B";
+    }
 }
