@@ -1,70 +1,26 @@
 #include <CapacitiveSensor.h>
 #include <LiquidCrystal_SR3W.h>
-#include "Type4067Mux.h"
+#include <Type4067Mux.h>
 
-#define capSensorSend 2
-#define seqSensor00In 22
-#define seqSensor01In 23
-#define seqSensor02In 24
-#define seqSensor03In 25
-#define seqSensor04In 26
-#define seqSensor05In 27
-#define seqSensor06In 28
-#define seqSensor07In 29
-#define seqSensor08In 30
-#define seqSensor09In 31
-#define seqSensor10In 32
-#define seqSensor11In 33
-#define seqSensor12In 34
-#define seqSensor13In 35
-#define seqSensor14In 36
-#define seqSensor15In 37
-#define optionSensor0In 0
-#define optionSensor1In 0
-#define optionSensor2In 0
-#define optionSensor3In 0
-#define optionSensor4In 0
-#define optionSensor5In 0
-#define optionSensor6In 0
-#define optionSensor7In 0
-#define optionSensor8In 0
-#define optionSensor9In 0
-
-#define LCD_Strobe 0
-#define LCD_Data 0
-#define LCD_Clock 0
-#define LCD_BackLightPin 0
-
-#define LED_COM 0
-#define LED_S0 0
-#define LED_S1 0
-#define LED_S2 0
-#define LED_S3 0
-
-#define gateOut0 0
-#define gateOut1 0
-#define gateOut2 0
-#define gateOut3 0
-#define cvOut0 0
-#define cvOut1 0
-#define cvOut2 0
-#define cvOut3 0
+#include "pins.h"
 
 // Sequencer
-byte channels = 4;
+int channels = 4;
 bool playing[4] = {false};
 byte steps[4] = {16, 16, 16, 16};
 byte step[4] = {0, 0, 0, 0};
-int globalCount = 0;
 // Secuencia, 0-15 banco 0 , 16-31 banco 1
 byte sequence[4][32] = {
-    {0, 0, 0, 0, 0, 0, 0, 0, 51, 51, 51, 51, 51, 51, 51, 51, 0, 0, 0, 0, 51, 51, 51, 51, 102, 102, 102, 102, 153, 153, 153, 153},
-    {255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0},
-    {255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0},
-    {255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 12, 12, 12, 12, 12, 12, 12, 12, 0, 0, 0, 0, 12, 12, 12, 12, 24, 24, 24, 24, 36, 36, 36, 36},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
 bool sequenceGate[4][32] = {{0}, {0}, {0}, {0}};
-// Modos (0: Sequencer, 1: Keyboard, 2: Arpeggiator, 3: MIDI controller)
+byte sequenceDirection[4] = {0};        // 0: Forward, 1: Backwards, 2: Back & Forth
+bool isSequenceMovingForward[4] = {1};
+bool legato[4] = {0};
+// Modes (0: Sequencer, 1: Keyboard, 2: Arpeggiator, 3: MIDI controller)
 byte mode[4] = {0, 1, 0, 0};
 byte activeBank[4] = {0, 0, 0, 0};
 byte activeChannel = 0;
@@ -74,10 +30,11 @@ int tempo = 120;
 unsigned long preMillis = 0;
 unsigned long ms = millis();
 
-// Controles
-// 0: nada, 1: tempo, 2: sequence notes
-byte encoderControl = 0;
-int debounce = 200;
+// Controls
+// Encoder 0: nothing, 1: tempo, 2: Mode, 3: sequence notes, 4: sequence direction
+int encoderControl = 0;
+bool seqGateControl = 1;                // true: set gate, false: set note
+int selectedStep = 0;                   // Selected step to set
 int seqSensorRead[16] = {0};
 bool seqSensorGate[16] = {0};
 bool seqSensorGatePrev[16] = {0};
@@ -125,13 +82,20 @@ Type4067Mux ledMux(LED_COM, OUTPUT, DIGITAL, LED_S0, LED_S1, LED_S2, LED_S3);
 
 // Scales
 byte octave[4] = {0};
-byte chromatic[12] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+byte chromatic[13] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
 byte major[7] = { 0, 2, 4, 5, 7, 9, 11 };
 byte minor[7] = { 0, 2, 3, 5, 7, 8, 10 };
 byte doric[7] = { 0, 2, 3, 5, 7, 9, 10 };
 
 // 1voct
-float voltPerOctaveNotes[12] = { 1/12, 1/12*2, 1/12*3, 1/12*4, 1/12*5, 1/12*6, 1/12*7, 1/12*8, 1/12*9, 1/12*10, 1/12*11, 1/12*12};
+float voltPerOctaveNotes[61] = {
+    0, 1/12, 1/12*2, 1/12*3, 1/12*4, 1/12*5, 1/12*6, 1/12*7, 1/12*8, 1/12*9, 1/12*10, 1/12*11, 
+    1, 1 + 1/12, 1 + 1/12*2, 1 + 1/12*3, 1 + 1/12*4, 1 + 1/12*5, 1 + 1/12*6, 1 + 1/12*7, 1 + 1/12*8, 1 + 1/12*9, 1 + 1/12*10, 1 + 1/12*11, 
+    2, 2 + 1/12, 2 + 1/12*2, 2 + 1/12*3, 2 + 1/12*4, 2 + 1/12*5, 2 + 1/12*6, 2 + 1/12*7, 2 + 1/12*8, 2 + 1/12*9, 2 + 1/12*10, 2 + 1/12*11, 
+    3, 3 + 1/12, 3 + 1/12*2, 3 + 1/12*3, 3 + 1/12*4, 3 + 1/12*5, 3 + 1/12*6, 3 + 1/12*7, 3 + 1/12*8, 3 + 1/12*9, 3 + 1/12*10, 3 + 1/12*11, 
+    4, 4 + 1/12, 4 + 1/12*2, 4 + 1/12*3, 4 + 1/12*4, 4 + 1/12*5, 4 + 1/12*6, 4 + 1/12*7, 4 + 1/12*8, 4 + 1/12*9, 4 + 1/12*10, 4 + 1/12*11, 
+    5
+};
 
 
 void setup() {
@@ -153,33 +117,30 @@ void loop() {
     ms = millis();
     
 
-    // Leer entradas de secuencia
+    // Read button touches
     for (int i = 0; i < 16; i++) {
+        // Secuence
         seqSensorGatePrev[i] = seqSensorGate[i];
         seqSensorRead[i] = capSensor[i].capacitiveSensor(30);
-        if (seqSensorRead[i] >= seqTriggerFactor) seqSensorGate[i] = 1;
-        if (seqSensorGate[i] == 1 && seqSensorGatePrev[i] == seqSensorGate[i]) seqSensorTrig[i] = 1;
-        else seqSensorTrig[i] = 0;
+        seqSensorGate[i] = seqSensorRead[i] >= seqTriggerFactor;
+        seqSensorTrig[i] = seqSensorGate[i] == 1 && seqSensorGatePrev[i] == seqSensorGate[i];
+        if (i < 10) {
+            // Options
+            optionSensorGatePrev[i] = optionSensorGate[i];
+            optionSensorRead[i] = capSensor[i].capacitiveSensor(30);
+            optionSensorGate[i] = optionSensorRead[i] >= optionTriggerFactor;
+            optionSensorTrig[i] = optionSensorGate[i] == 1 && optionSensorGatePrev[i] == optionSensorGate[i];    
+        }
     }
 
-    // Leer entradas de opciones
-    for (int i = 0; i < 10; i++) {
-        optionSensorGatePrev[i] = optionSensorGate[i];
-        optionSensorRead[i] = capSensor[i].capacitiveSensor(30);
-        if (optionSensorRead[i] >= optionTriggerFactor) optionSensorGate[i] = 1;
-        if (optionSensorGate[i] == 1 && optionSensorGatePrev[i] == optionSensorGate[i]) optionSensorTrig[i] = 1;
-        else optionSensorTrig[i] = 0;
-    }
-
-    // Manejar toques de botones de opciones
+    // Handle options/menu touches
     for (int i = 0; i < 10; i++) {
         if (optionSensorTrig[i]) {
             switch (i) {  
             case 0:
                 // Tempo
                 encoderControl = 1;
-                lcd.setCursor(0, 1);
-                lcd.print("Tempo");
+                writeToLCDCoordinate(0, 1, "Tempo   ");
                 break;
                 
             case 1:
@@ -194,28 +155,38 @@ void loop() {
                 
                 break;
                 
-            case 4:
-                
+            case 4: // Mode
+                encoderControl = 2;
+                writeToLCDCoordinate(0, 1, "Mode    ");
                 break;
                 
-            case 5:
-                
-                break;
-                
-            case 6:
+            case 5: // Play-pause
                 playing[activeChannel] = !playing[activeChannel];
+                break;
+                
+            case 6: // Stop
+                playing[activeChannel] = false;
+                step[activeChannel] = 0;
                 break;
                 
             case 7:
                 
                 break;
                 
-            case 8:
-                
+            case 8: // Sequence gate/note
+                seqGateControl = !seqGateControl;
+                if (seqGateControl) {
+                    encoderControl = 0;
+                    writeToLCDCoordinate(0, 1, "SeqGate ");
+                } else {
+                    encoderControl = 3;
+                    writeToLCDCoordinate(0, 1, "SeqNote ");
+                }
                 break;
                 
-            case 9:
-                
+            case 9: // Sequence direction
+                encoderControl = 4;
+                writeToLCDCoordinate(0, 1, "SeqDir  ");
                 break;
             }
         }
@@ -236,45 +207,82 @@ void loop() {
     }
 
 
-    // Tocar Secuencia
-    if ((ms - preMillis) >= (60000 / tempo) / 8) { // Recorrer secuencia en fusas
+    // Play Sequence
+    if ((ms - preMillis) >= (60000 / tempo) / 8) { // on every 1/32
         preMillis = ms;
         for (int i = 0; i < channels; i++) {
             if (playing[i]) {
-                if (step[i]%2 == 0) { // Fusas fuertes
+                if (step[i]%2 == 0) { // Strong 1/32's
                     if (step[i]/2 < steps[i] && mode[i] == 0) {
-                        // Seleccionar secuencia según banco activo
+                        // Index based on active bank
                         int bankIndex;
                         if (activeBank[i] == 0) bankIndex = 0;
                         else bankIndex = 16;
 
-                        cvWrite[i] = sequence[bankIndex + step[i]];
+                        // cvWrite[i] = sequence[bankIndex + step[i]];
+                        playNote(i, sequence[bankIndex + step[i]], octave[i]);
                         gateWrite[i] = sequenceGate[bankIndex + step[i]];
-                        ledMux.write(!sequenceGate[bankIndex + step[i]], step[i]); // LED indicador de step
+                        ledMux.write(!sequenceGate[bankIndex + step[i]], step[i]); // Step indicator LED
                     }
-                } else { // Fusas débiles, baja el gate
-                    if (mode[i] == 0) gateWrite[i] = 0;
+                } else { // Weak 1/32's
+                    if (mode[i] == 0 && legato[i]) gateWrite[i] = 0;
                 }
 
-                // Resetear contador en último step
-                if (step[i] == (steps[i] * 2 - 1)) step[i] = 0;
-                else step[i]++;
+                // Next step
+                switch (sequenceDirection[i]) {
+                    case 0: // Forward
+                        isSequenceMovingForward[i] = 1;
+                        if (step[i] == (steps[i] * 2 - 1)) step[i] = 0;
+                        else step[i]++;
+                    break;
+                    
+                    case 1: // Backwards
+                        isSequenceMovingForward[i] = 0;
+                        if (step[i] == 0) step[i] = steps[i] * 2 - 1;
+                        else step[i]--;
+                    break;
+
+                    case 2: // Back & Forth
+                        if (isSequenceMovingForward[i]) {
+                            if (step[i] == (steps[i] * 2 - 1)) {
+                                isSequenceMovingForward[i] = 0;
+                                step[i]--;
+                            } else {
+                                step[i]++;
+                            }  
+                        } else {
+                            if (step[i] == 0) {
+                                isSequenceMovingForward[i] = 1;
+                                step[i]++;  
+                            } 
+                            else {
+                                step[i]--;
+                            }    
+                        }
+                    break;
+                }
+                
             }
         }
     }
     
 
-    // Modo Sequencer
+    // Sequencer Mode
     if (mode[activeChannel] == 0) {
-        // Manejar toques de botones de sequencer
-        for (int i = 0; i < 16; i++) if (seqSensorTrig[i]) sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
+        // Handle button touches
+        for (int i = 0; i < 16; i++) {
+            if (seqSensorTrig[i]) {
+                if (seqGateControl) sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
+                else selectedStep = i;
+            }
+        }
     }
 
-    // Modo Keyboard
+    // Keyboard Mode
     if (mode[activeChannel] == 1) {
         for (int i = 0; i < 16; i++) {
-            // Si se está tocando una tecla, escribe el gate y cv correspondiente y rompe el loop
-            // Esto genera prioridad en la tecla más grave
+            // When a key is being pressed writes cv and gate and breaks loop,
+            // generating lower key priority
             if (seqSensorGate[i]) {
                 switch (i) {
                 case 1:
@@ -282,7 +290,7 @@ void loop() {
                 case 4 ... 6:
                 case 8 ... 15:
                     gateWrite[activeChannel] = 1;
-                    playNote(activeChannel, i, octave[activeChannel]);
+                    playNote(activeChannel, keyToNote(i), octave[activeChannel]);
                     break;
                 case 0:
                     if (octave[activeChannel] > 0) {
@@ -297,7 +305,7 @@ void loop() {
                 }
                 break;
             } else if (i == 15 && !seqSensorGate[i]) {
-                // Si no se está tocando ninguna tecla, baja el gate
+                // If no key is pressed, set gate to low
                 gateWrite[activeChannel] = 0;
             }
         }
@@ -328,12 +336,12 @@ void loop() {
     }
 
     writeToLCDCoordinate(0, 0, String(tempo));
-    writeToLCDCoordinate(8, 0, translateNoteName(int(cvWrite[activeChannel] * 12)));
+    if (encoderControl != 3) writeToLCDCoordinate(8, 0, translateNoteName(int(cvWrite[activeChannel] * 12)));
     writeToLCDCoordinate(11, 1, String(int(activeBank)));
     writeToLCDCoordinate(15, 1, String(int(activeChannel)));
 
 
-    //Escribir salidas
+    // Write outputs
     digitalWrite(gateOut0, gateWrite[0]);
     digitalWrite(gateOut1, gateWrite[1]);
     digitalWrite(gateOut2, gateWrite[2]);
@@ -369,18 +377,44 @@ void writeToLCDCoordinate (int col, int row, String text) {
 }
 
 String translateNoteName (int note) {
-    switch (note) {
-        case 0: return "C";
-        case 1: return "C#";
-        case 2: return "D";
-        case 3: return "D#";
-        case 4: return "E";
-        case 5: return "F";
-        case 6: return "F#";
-        case 7: return "G";
-        case 8: return "G#";
-        case 9: return "A";
-        case 10: return "A#";
-        case 11: return "B";
+    int oct = note/12;
+    int rest;
+    String name;
+    if (note == 0) rest = 0;
+    else rest = note%12;
+    
+    switch (rest) {
+        case 0: name = "C"; break; 
+        case 1: name = "C#"; break;
+        case 2: name = "D"; break;
+        case 3: name = "D#"; break;
+        case 4: name = "E"; break;
+        case 5: name = "F"; break;
+        case 6: name = "F#"; break;
+        case 7: name = "G"; break;
+        case 8: name = "G#"; break;
+        case 9: name = "A"; break;
+        case 10: name = "A#"; break;
+        case 11: name = "B"; break;
+    }
+
+    return name + String(oct);
+}
+
+int keyToNote(int key) {
+    switch (key) {
+        case 1: return 1;
+        case 2: return 3;
+        case 4: return 6;
+        case 5: return 8;
+        case 6: return 10;
+        case 8: return 0;
+        case 9: return 2;
+        case 10: return 4;
+        case 11: return 5;
+        case 12: return 7;
+        case 13: return 9;
+        case 14: return 11;
+        case 15: return 12;
     }
 }
