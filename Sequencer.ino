@@ -1,6 +1,5 @@
 #include <CapacitiveSensor.h>
 #include <LiquidCrystal_SR3W.h>
-#include <Type4067Mux.h>
 
 #include "pins.h"
 
@@ -18,22 +17,25 @@ byte sequence[4][32] = {
 };
 bool sequenceGate[4][32] = {{0}, {0}, {0}, {0}};
 byte sequenceDirection[4] = {0};        // 0: Forward, 1: Backwards, 2: Back & Forth
+bool sequenceLED[4] = {0};
 bool isSequenceMovingForward[4] = {1};
 bool legato[4] = {0};
 // Modes (0: Sequencer, 1: Keyboard, 2: Arpeggiator, 3: MIDI controller)
 byte mode[4] = {0, 1, 0, 0};
 byte activeBank[4] = {0, 0, 0, 0};
 byte activeChannel = 0;
-byte cvWrite[4] = {0, 0, 0, 0};
+float cvWrite[4] = {0, 0, 0, 0};
 bool gateWrite[4] = {0, 0, 0, 0};
 int tempo = 120;
 unsigned long preMillis = 0;
 unsigned long ms = millis();
 
 // Controls
-// Encoder 0: nothing, 1: tempo, 2: Mode, 3: sequence notes, 4: sequence direction
+// Encoder 0: nothing, 1: tempo, 2: Mode, 3: sequence notes, 4: sequence direction, 5: scale
+const bool keyBoardLights[16] = {0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1};
 int encoderControl = 0;
 bool seqGateControl = 1;                // true: set gate, false: set note
+bool setSteps = 0;                      // true: set steps, false: set gate/note
 int selectedStep = 0;                   // Selected step to set
 int seqSensorRead[16] = {0};
 bool seqSensorGate[16] = {0};
@@ -76,9 +78,6 @@ CapacitiveSensor capSensor[26] = {
 
 //LCD
 LiquidCrystal_SR3W lcd(LCD_Data, LCD_Clock, LCD_Strobe);
-
-// LEDs
-Type4067Mux ledMux(LED_COM, OUTPUT, DIGITAL, LED_S0, LED_S1, LED_S2, LED_S3);
 
 // Scales
 byte octave[4] = {0};
@@ -137,8 +136,7 @@ void loop() {
     for (int i = 0; i < 10; i++) {
         if (optionSensorTrig[i]) {
             switch (i) {  
-            case 0:
-                // Tempo
+            case 0: // Tempo
                 encoderControl = 1;
                 writeToLCDCoordinate(0, 1, "Tempo   ");
                 break;
@@ -147,12 +145,15 @@ void loop() {
                 
                 break;
                 
-            case 2:
-                
+            case 2: // Select Scale
+                encoderControl = 5;
+                writeToLCDCoordinate(0, 1, "Scl ");
                 break;
                 
-            case 3:
-                
+            case 3: // Bank Switch
+                if (activeBank[activeChannel] == 0) activeBank[activeChannel] = 1;
+                else activeBank[activeChannel] = 0;
+                writeToLCDCoordinate(0, 1, "Bank " .. activeBank[activeChannel]);
                 break;
                 
             case 4: // Mode
@@ -169,8 +170,9 @@ void loop() {
                 step[activeChannel] = 0;
                 break;
                 
-            case 7:
-                
+            case 7: // Steps
+                setSteps = true;
+                writeToLCDCoordinate(0, 1, "Steps " .. steps[activeChannel]);
                 break;
                 
             case 8: // Sequence gate/note
@@ -221,47 +223,14 @@ void loop() {
 
                         // cvWrite[i] = sequence[bankIndex + step[i]];
                         playNote(i, sequence[bankIndex + step[i]], octave[i]);
-                        gateWrite[i] = sequenceGate[bankIndex + step[i]];
-                        ledMux.write(!sequenceGate[bankIndex + step[i]], step[i]); // Step indicator LED
+                        gateWrite[i] = sequenceGate[bankIndex + step[i]]; 
+                        sequenceLED[step[i]] = !sequenceLED[step[i]]; // Invert step's LED
                     }
                 } else { // Weak 1/32's
                     if (mode[i] == 0 && legato[i]) gateWrite[i] = 0;
+                    sequenceLED[step[i]] = !sequenceLED[step[i]]; // Revert step's LED
                 }
-
-                // Next step
-                switch (sequenceDirection[i]) {
-                    case 0: // Forward
-                        isSequenceMovingForward[i] = 1;
-                        if (step[i] == (steps[i] * 2 - 1)) step[i] = 0;
-                        else step[i]++;
-                    break;
-                    
-                    case 1: // Backwards
-                        isSequenceMovingForward[i] = 0;
-                        if (step[i] == 0) step[i] = steps[i] * 2 - 1;
-                        else step[i]--;
-                    break;
-
-                    case 2: // Back & Forth
-                        if (isSequenceMovingForward[i]) {
-                            if (step[i] == (steps[i] * 2 - 1)) {
-                                isSequenceMovingForward[i] = 0;
-                                step[i]--;
-                            } else {
-                                step[i]++;
-                            }  
-                        } else {
-                            if (step[i] == 0) {
-                                isSequenceMovingForward[i] = 1;
-                                step[i]++;  
-                            } 
-                            else {
-                                step[i]--;
-                            }    
-                        }
-                    break;
-                }
-                
+                sequenceNextStep(i);
             }
         }
     }
@@ -272,8 +241,18 @@ void loop() {
         // Handle button touches
         for (int i = 0; i < 16; i++) {
             if (seqSensorTrig[i]) {
-                if (seqGateControl) sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
-                else selectedStep = i;
+                if (setSteps == true) {
+                    steps[activeChannel] = i + 1;
+                    setSteps = false;
+                    break;
+                } else {
+                    if (seqGateControl) {
+                        sequenceGate[activeChannel][i] = !sequenceGate[activeChannel][i];
+                        sequenceLED[i] = sequenceGate[activeChannel][i];
+                    } else {
+                        selectedStep = i;
+                    }    
+                }
             }
         }
     }
@@ -281,8 +260,7 @@ void loop() {
     // Keyboard Mode
     if (mode[activeChannel] == 1) {
         for (int i = 0; i < 16; i++) {
-            // When a key is being pressed writes cv and gate and breaks loop,
-            // generating lower key priority
+            // When a key is being pressed writes cv and gate
             if (seqSensorGate[i]) {
                 switch (i) {
                 case 1:
@@ -293,44 +271,40 @@ void loop() {
                     playNote(activeChannel, keyToNote(i), octave[activeChannel]);
                     break;
                 case 0:
-                    if (octave[activeChannel] > 0) {
-                        octave[activeChannel]--;
-                    }
+                    if (octave[activeChannel] > 0) octave[activeChannel]--;
                     break;
                 case 7:
-                    if (octave[activeChannel] < 4) {
-                        octave[activeChannel]++;
-                    }
+                    if (octave[activeChannel] < 4) octave[activeChannel]++;
                     break;
                 }
-                break;
+                break; // break the loop to generate lower key priority
             } else if (i == 15 && !seqSensorGate[i]) {
                 // If no key is pressed, set gate to low
                 gateWrite[activeChannel] = 0;
             }
         }
-        
     }
 
     // LEDs & LCD
     switch (mode[activeChannel]) {
         case 0: // Sequencer
-            for (int i = 0; i < 16; i++) {
-                int bankIndex;
-                if (activeBank[i] == 0) bankIndex = 0;
-                else bankIndex = 16;
-                for (int j = bankIndex; j < bankIndex + 16; j++) ledMux.write(sequenceGate[j], i);
+            int bankIndex;
+            if (activeBank[activeChannel] == 0) bankIndex = 0;
+            else bankIndex = 16;
+            for (int j = bankIndex; j < bankIndex + 16; j++) {
+                //latchedShiftOut_16bits(LED_Data, LED_Strobe, LED_Clock, sequenceGate[activeChannel][j]);
+                latchedShiftOut_16bits(LED_Data, LED_Strobe, LED_Clock, sequenceLED[j]);
             }
             writeToLCDCoordinate(13, 0, "Seq");
             break;
 
         case 1: // Keyboard
-            lightKeyboard();
+            latchedShiftOut_16bits(LED_Data, LED_Strobe, LED_Clock, keyBoardLights);
             writeToLCDCoordinate(13, 0, "Kyb");
             break;
 
-        case 2:
-            lightKeyboard();
+        case 2: // Arpeggiator
+            latchedShiftOut_16bits(LED_Data, LED_Strobe, LED_Clock, keyBoardLights);
             writeToLCDCoordinate(13, 0, "Arp");
             break;
     }
@@ -355,20 +329,7 @@ void loop() {
 
 void playNote (byte channel, byte note, byte oct) {
     float voltage = voltPerOctaveNotes[note] + oct;
-    cvWrite[channel] = map(voltage, 0, 5, 0, 255);
-}
-
-void lightKeyboard () {
-    for (int i = 0; i < 16; i++) {
-        switch (i) {
-        case 1:
-        case 2:
-        case 4 ... 6:
-        case 8 ... 15:
-            ledMux.write(1, i);
-            break;
-        }
-    }
+    cvWrite[channel] = voltage;
 }
 
 void writeToLCDCoordinate (int col, int row, String text) {
@@ -416,5 +377,52 @@ int keyToNote(int key) {
         case 13: return 9;
         case 14: return 11;
         case 15: return 12;
+    }
+}
+
+void latchedShiftOut_16bits (int data, int strobe, int clock, bool seq[16]) {
+    digitalWrite(data, 0);
+    for (int i = 0; i < 16; i++) {
+        digitalWrite(data, seq[i]);
+        digitalWrite(clock, 1);
+        digitalWrite(clock, 0);
+    }
+    digitalWrite(strobe, 1);
+    digitalWrite(strobe, 0);
+    digitalWrite(data, 0);
+}
+
+void sequenceNextStep (int i) {
+    switch (sequenceDirection[i]) {
+        case 0: // Forward
+            isSequenceMovingForward[i] = 1;
+            if (step[i] == (steps[i] * 2 - 1)) step[i] = 0;
+            else step[i]++;
+        break;
+        
+        case 1: // Backwards
+            isSequenceMovingForward[i] = 0;
+            if (step[i] == 0) step[i] = steps[i] * 2 - 1;
+            else step[i]--;
+        break;
+
+        case 2: // Back & Forth
+            if (isSequenceMovingForward[i]) {
+                if (step[i] == (steps[i] * 2 - 1)) {
+                    isSequenceMovingForward[i] = 0;
+                    step[i]--;
+                } else {
+                    step[i]++;
+                }  
+            } else {
+                if (step[i] == 0) {
+                    isSequenceMovingForward[i] = 1;
+                    step[i]++;  
+                } 
+                else {
+                    step[i]--;
+                }    
+            }
+        break;
     }
 }

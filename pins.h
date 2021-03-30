@@ -31,15 +31,9 @@
 #define LCD_Clock 0
 #define LCD_BackLightPin 0
 
-// #define LED_Strobe 0
-// #define LED_Data 0
-// #define LED_Clock 0
-
-#define LED_COM 0
-#define LED_S0 0
-#define LED_S1 0
-#define LED_S2 0
-#define LED_S3 0
+#define LED_Strobe 0
+#define LED_Data 0
+#define LED_Clock 0
 
 #define gateOut0 0
 #define gateOut1 0
