@@ -8,7 +8,7 @@ Based on the Arduino Mega.
 
 Some of it's features are:
 - MIDI in/out
-- 3x Cv out
+- 3x 1volt/oct out
 - 3x Gate out
 - Sequencer
 - Arpeggiator
