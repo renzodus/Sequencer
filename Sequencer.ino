@@ -17,7 +17,7 @@ byte sequence[4][32] = {
 };
 bool sequenceGate[4][32] = {{0}, {0}, {0}, {0}};
 byte sequenceDirection[4] = {0};        // 0: Forward, 1: Backwards, 2: Back & Forth
-bool sequenceLED[4] = {0};
+bool sequenceLED[16] = {0};
 bool isSequenceMovingForward[4] = {1};
 bool legato[4] = {0};
 // Modes (0: Sequencer, 1: Keyboard, 2: Arpeggiator, 3: MIDI controller)
@@ -216,14 +216,8 @@ void loop() {
             if (playing[i]) {
                 if (step[i]%2 == 0) { // Strong 1/32's
                     if (step[i]/2 < steps[i] && mode[i] == 0) {
-                        // Index based on active bank
-                        int bankIndex;
-                        if (activeBank[i] == 0) bankIndex = 0;
-                        else bankIndex = 16;
-
-                        // cvWrite[i] = sequence[bankIndex + step[i]];
-                        playNote(i, sequence[bankIndex + step[i]], octave[i]);
-                        gateWrite[i] = sequenceGate[bankIndex + step[i]]; 
+                        playNote(i, sequence[activeBank[i] * 16 + step[i]], octave[i]);
+                        gateWrite[i] = sequenceGate[activeBank[i] * 16 + step[i]]; 
                         sequenceLED[step[i]] = !sequenceLED[step[i]]; // Invert step's LED
                     }
                 } else { // Weak 1/32's
@@ -288,13 +282,7 @@ void loop() {
     // LEDs & LCD
     switch (mode[activeChannel]) {
         case 0: // Sequencer
-            int bankIndex;
-            if (activeBank[activeChannel] == 0) bankIndex = 0;
-            else bankIndex = 16;
-            for (int j = bankIndex; j < bankIndex + 16; j++) {
-                //latchedShiftOut_16bits(LED_Data, LED_Strobe, LED_Clock, sequenceGate[activeChannel][j]);
-                latchedShiftOut_16bits(LED_Data, LED_Strobe, LED_Clock, sequenceLED[j]);
-            }
+            latchedShiftOut_16bits(LED_Data, LED_Strobe, LED_Clock, sequenceLED);
             writeToLCDCoordinate(13, 0, "Seq");
             break;
 
