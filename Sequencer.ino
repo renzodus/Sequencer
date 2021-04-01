@@ -85,7 +85,7 @@ bool shouldLCDUpdate[5] = {true}; // 0: tempo, 1: note, 2: mode, 3: option, 4: c
 
 // Scales
 byte octave[4] = {0};
-uint8_t scale[4] = {0};
+int scale[4] = {0};
 byte chromatic[13] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
 byte major[7] = { 0, 2, 4, 5, 7, 9, 11 };
 byte minor[7] = { 0, 2, 3, 5, 7, 8, 10 };
@@ -257,7 +257,7 @@ void loop() {
         case 1: // Keyboard Mode
             if (shouldLightsUpdate) updateLights(keyBoardLights);
             if (shouldLCDUpdate[2]) updateLCD(2, "Kyb");
-            
+
             for (int i = 0; i < 16; i++) {
                 // When a key is being pressed writes cv and gate
                 if (seqSensorGate[i]) {
