@@ -35,6 +35,12 @@
 #define LED_Data 0
 #define LED_Clock 0
 
+#define encoderCLK 0
+#define encoderDT 3
+#define encoderSW 0
+
+#define channelSelector 0
+
 #define gateOut0 0
 #define gateOut1 0
 #define gateOut2 0
