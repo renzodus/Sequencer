@@ -1,5 +1,7 @@
 #include <CapacitiveSensor.h>
 #include <LiquidCrystal_SR3W.h>
+#include <Wire.h>
+#include <Adafruit_MCP4725.h>
 
 #include "pins.h"
 #include "misc.h"
@@ -101,9 +103,12 @@ float voltPerOctaveNotes[61] = {
     5
 };
 
+Adafruit_MCP4725 DAC[3] = {Adafruit_MCP4725(DACSelect0), Adafruit_MCP4725(DACSelect1), Adafruit_MCP4725(DACSelect2)};
+
 
 void setup() {
     attachInterrupt(digitalPinToInterrupt(encoderDT), encoder, LOW);
+    for (int i = 0; i < 3; i++) DAC[i].begin(0x63);
     lcd.begin(16, 2);
     lcd.home();
     lcd.noCursor();
@@ -299,10 +304,7 @@ void loop() {
     digitalWrite(gateOut1, gateWrite[1]);
     digitalWrite(gateOut2, gateWrite[2]);
     digitalWrite(gateOut3, gateWrite[3]);
-    analogWrite(cvOut0, cvWrite[0]);
-    analogWrite(cvOut1, cvWrite[1]);
-    analogWrite(cvOut2, cvWrite[2]);
-    analogWrite(cvOut3, cvWrite[3]);
+    
     
     prevChannel = activeChannel;
 }
@@ -310,7 +312,9 @@ void loop() {
 
 void playNote (byte channel, byte note, byte oct) {
     float voltage = voltPerOctaveNotes[note] + oct;
+    int mv = voltage * 1000;
     cvWrite[channel] = voltage;
+    DAC[channel].setVoltage(map(mv, 0, 5000, 0, 4095), false);
     updateLCD(1, translateNoteName(note));
 }
 

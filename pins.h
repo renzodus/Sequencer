@@ -49,3 +49,7 @@
 #define cvOut1 0
 #define cvOut2 0
 #define cvOut3 0
+
+#define DACSelect0 0
+#define DACSelect1 0
+#define DACSelect2 0
