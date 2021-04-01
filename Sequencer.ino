@@ -230,12 +230,12 @@ void loop() {
         if (mode[activeChannel] == 0) shouldLightsUpdate = true;
     }
     
-
+    // Handle button touches
     switch (mode[activeChannel]) {
         case 0: // Sequencer Mode
             if (shouldLightsUpdate) updateLights(sequenceLED);
             if (shouldLCDUpdate[2]) updateLCD(2, "Seq");
-            // Handle button touches
+
             for (int i = 0; i < 16; i++) {
                 if (seqSensorTrig[i]) {
                     if (setSteps == true) {
@@ -257,6 +257,7 @@ void loop() {
         case 1: // Keyboard Mode
             if (shouldLightsUpdate) updateLights(keyBoardLights);
             if (shouldLCDUpdate[2]) updateLCD(2, "Kyb");
+            
             for (int i = 0; i < 16; i++) {
                 // When a key is being pressed writes cv and gate
                 if (seqSensorGate[i]) {
