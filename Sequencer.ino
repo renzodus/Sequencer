@@ -103,16 +103,18 @@ float voltPerOctaveNotes[61] = {
     5
 };
 
-Adafruit_MCP4725 DAC0(DACSelect0);
-Adafruit_MCP4725 DAC1(DACSelect1);
-Adafruit_MCP4725 DAC2(DACSelect2);
+// Adafruit_MCP4725 DAC0(DACSelect0);
+// Adafruit_MCP4725 DAC1(DACSelect1);
+// Adafruit_MCP4725 DAC2(DACSelect2);
+Adafruit_MCP4725 DAC[3] = {Adafruit_MCP4725(DACSelect0), Adafruit_MCP4725(DACSelect1), Adafruit_MCP4725(DACSelect2)};
 
 
 void setup() {
     attachInterrupt(digitalPinToInterrupt(encoderDT), encoder, LOW);
-    DAC0.begin(0x61);
-    DAC1.begin(0x61);
-    DAC2.begin(0x61);
+    // DAC0.begin(0x61);
+    // DAC1.begin(0x61);
+    // DAC2.begin(0x61);
+    for (int i = 0; i < 3; i++) DAC[i].begin(0x61);
     lcd.begin(16, 2);
     lcd.home();
     lcd.noCursor();
@@ -317,19 +319,20 @@ void loop() {
 void playNote (byte channel, byte note, byte oct) {
     float voltage = voltPerOctaveNotes[note] + oct;
     cvWrite[channel] = voltage;
-    switch (channel) {
-        case 0:
-            DAC0.setVoltage(map(int(voltage * 1000), 0, 5000, 0, 4095), false);
-            break;
-        case 1:
-            DAC1.setVoltage(map(int(voltage * 1000), 0, 5000, 0, 4095), false);
-            break;
-        case 2:
-            DAC2.setVoltage(map(int(voltage * 1000), 0, 5000, 0, 4095), false);
-            break;
-        default:
-            break;
-    }
+    DAC[channel].setVoltage(map(int(voltage * 1000), 0, 5000, 0, 4095), false);
+    // switch (channel) {
+    //     case 0:
+    //         DAC0.setVoltage(map(int(voltage * 1000), 0, 5000, 0, 4095), false);
+    //         break;
+    //     case 1:
+    //         DAC1.setVoltage(map(int(voltage * 1000), 0, 5000, 0, 4095), false);
+    //         break;
+    //     case 2:
+    //         DAC2.setVoltage(map(int(voltage * 1000), 0, 5000, 0, 4095), false);
+    //         break;
+    //     default:
+    //         break;
+    // }
     
     updateLCD(1, translateNoteName(note));
 }
